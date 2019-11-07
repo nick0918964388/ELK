@@ -107,7 +107,44 @@ PASSWORD elastic = <elastic_password>
 是否有出現nodes相關資訊
 
 #3-1 在kibana上啟動TLS
+將步驟中的接續2-3-1，CA.cert、elktw.cert、elktw.key也同樣copy至kibana_home/config/certs(創建certs目錄)
 
+#3-2 設定kibana.yaml
+[kibana.yaml]
 
+server.port: 5601
+server.name: "my-kibana"
+server.host: "elktw"
+server.basePath: "/kibana"
+server.ssl.enabled: true
+server.ssl.certificate: config/certs/elktw.crt
+server.ssl.key: config/certs/elktw.key
+elasticsearch.hosts: ["https://elktw:9200"] 
+elasticsearch.username: "kibana"
+elasticsearch.password: "<kibana password>"
+elasticsearch.ssl.certificateAuthorities: [ "config/certs/rootca.crt" ]
+logging.verbose: true
+#logging.dest: "logs/kibana.log"
 
+[kibana.yaml]
+*備註 : server.basePath 是後續設定reverse proxy時需要設定的屬性。
+*備註 : logging.verbose: true 設定debug模式，一般可以配合logging.dest: "logs/kibana.log"讓log落地。
 
+#3-3 啟動kibana
+kibana_home/bin/kibana
+首次進入帳號密碼可用elatsic，密碼為前步驟創建的密碼登入
+
+#4-1 Logstash SSL配置
+將CA.cert、elktw.cert、elktw.key檔案copy至logstash_home/config/certs(創建certs目錄)
+
+#4-2 配置Logstash.conf檔案(腳本檔案)
+若為output是ES：
+output {
+elasticsearch { 
+    hosts => ["https://elktw:9200"] 
+    index => "testindex"  
+    cacert => 'C:\\users\\peggy\\logstash-7.3.0\\config\\certs\\ca.crt'
+    user => 'elastic'
+    password => I3KLHfAaOmjWmqmNWJTF
+}
+    
