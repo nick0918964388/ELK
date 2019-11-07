@@ -1,0 +1,113 @@
+#設定ELK SSL步驟
+
+參考資料 : https://www.elastic.co/cn/blog/configuring-ssl-tls-and-https-to-secure-elasticsearch-kibana-beats-and-logstash
+
+#1.設定主機名稱 (以windows為例)
+
+開啟C:\Windows\System32\Drivers\etc\hosts ，記得先行備份。
+
+設定Elasticsearch、kibana的主機名稱，本次測試都在同一台上，為了與maximo區隔開，host name 同時用不同的代表
+
+主機名稱 : win-i0a1hrhes6s elktw
+
+#2. 設定在 node1 上创建 SSL 证书并为 Elasticsearch 启用 TLS
+
+#2-1 增加一個認證資料夾目錄 : C:\tmp\cert_blog\
+
+#2-2 創立一個instance yaml檔案(憑證可以一次產生多instance)
+
+[instance .yaml]
+# add the instance information to yml file
+instances:
+  - name: 'elktw'
+    dns: [ 'elktw','elktw.tsmc.com','elktw.tsmc.com.tw' ]
+
+dns => 放入主機名稱
+
+#2-3 產生CA與Certificate檔案 
+[科普]
+    certificate：指 SSL 證書
+    key：指證書的私鑰
+    CA：Certificate Authority，憑證頒發機構，負責簽憑證的
+    CSR：Certificate Signing Request，憑證申請書
+    Keystore：金鑰資料庫，可以同時放入CA憑證、certificate憑證
+
+[2-3-1 用ES工具產生憑證與CA檔案]
+$ES_HOME/bin/elasticsearch-certutil cert ca --pem --in ~/tmp/cert_blog/instance.yml --out ~/tmp/cert_blog/certs.zip
+
+[2-3-2 正常步驟為openssl產生CSR，用此CSR取得CA憑證與SSL憑證，但測試時可以用自己產生的CA自簽CSR，產生SSL憑證]
+1.產生CA key & CA 密碼
+openssl genrsa -des3 -out rootca.key 2048
+2.產生CA CSR
+openssl req -new -key rootca.key -out rootca.req
+3.幫自己CA簽過
+openssl x509 -req -days 36500 -sha384 -extfile "C:\\Program Files\\OpenSSL-Win64\\bin\\openssl.cfg" -extensions v3_ca -signkey rootca.key -in rootca.req -out rootca.crt
+4.server 自己的key
+openssl genrsa -out elktw.key 2048
+5.憑證申請書
+openssl req -new -key elktw.key -out elktw.req -sha384 -config elktw.conf
+6.CA 發憑證
+openssl x509 -req -days 3650 -sha384 -extfile elktw.conf -extensions v3_req -CA rootca.crt -CAkey rootca.key -CAserial rootca.srl -CAcreateserial -in elktw.req -out elktw.crt
+
+[接續2-3-1 解壓縮certs.zip]
+取得ca.cert、elktw.cert、elktw.key檔案，放入ES_HOME/config/certs中(certs目錄新創建)
+
+#2-4設定node1的es.yaml
+加入以下設定，原來不改
+
+cluster.name: my-application
+node.name: elktw
+
+network.host: elktw
+http.port: 9200
+path.logs: C:\Users\Peggy\elasticsearch-7.3.0\logs
+path.data: C:\Users\Peggy\elasticsearch-7.3.0\data
+
+xpack.security.enabled: true
+xpack.security.http.ssl.enabled: true
+xpack.security.transport.ssl.enabled: true
+xpack.security.http.ssl.key: certs/elktw.key
+xpack.security.http.ssl.certificate: certs/elktw.crt
+xpack.security.http.ssl.certificate_authorities: certs/elktw.crt
+xpack.security.transport.ssl.key: certs/elktw.key
+xpack.security.transport.ssl.certificate: certs/elktw.crt
+xpack.security.transport.ssl.certificate_authorities: certs/elktw.crt
+discovery.seed_hosts: [ "elktw:9200"]
+cluster.initial_master_nodes: [ "elktw" ]
+#http.cors.enabled: true
+#http.cors.allow-origin: ["*"]
+
+#2-5 啟動ES Node1
+ES_HOME/bin/elasticsearch
+看是否正常
+
+#2-6 設置ES帳號密碼(之後Kibana也會用到)
+ES_HOME/bin/elasticsearch-setup-passwords auto -u "https://elktw:9200"
+會產生系統預設的使用者帳號
+Initiating the setup of passwords for reserved users elastic,apm_system,kibana,logstash_system,beats_system,remote_monitoring_user.
+The passwords will be randomly generated and printed to the console.
+Please confirm that you would like to continue [y/N] y
+Changed password for user apm_system
+PASSWORD apm_system = <apm_system_password>
+Changed password for user kibana
+PASSWORD kibana = <kibana_password>
+Changed password for user logstash_system
+PASSWORD logstash_system = <logstash_system_password>
+Changed password for user beats_system
+PASSWORD beats_system = <beats_system_password>
+Changed password for user remote_monitoring_user
+PASSWORD remote_monitoring_user = <remote_monitoring_user_password>
+Changed password for user elastic
+PASSWORD elastic = <elastic_password>
+
+後續可以再用kibana管理介面新增使用者
+
+#2-7 測試nodes是否正常
+打開瀏覽器，輸入https://elktw:9200/_cat/nodes?v
+是否有出現nodes相關資訊
+
+#3-1 在kibana上啟動TLS
+
+
+
+
